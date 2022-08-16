@@ -6,6 +6,7 @@ from scipy import ndimage
 from torch.utils import data
 from skimage.draw import polygon
 from skimage import transform, img_as_int
+from torchvision.transforms import transforms
 
 import config
 
@@ -119,9 +120,10 @@ class SegmentationDataSet(data.Dataset):
         # Load input and target
         x = load_image(input_id)
         y = combine_masks(*binary_from_polygon(target_id))
+
         x = x.astype(np.float64)
         x = transform.resize(x, (config.INPUT_IMAGE_HEIGHT, config.INPUT_IMAGE_WIDTH), preserve_range=True)
-        y = transform.resize(y, (config.INPUT_IMAGE_HEIGHT, config.INPUT_IMAGE_WIDTH))
+        y = transform.resize(y, (config.INPUT_IMAGE_HEIGHT, config.INPUT_IMAGE_WIDTH), order=0, preserve_range=True, anti_aliasing=False)
         y = np.rint(y).astype(np.long)
         x = x / np.amax(x)
         x = np.expand_dims(x, axis=0)
