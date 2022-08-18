@@ -6,8 +6,17 @@ from tqdm import tqdm
 from skimage import transform
 from dataset import load_image, combine_masks, binary_from_polygon
 
+__author__ = "Christian Grashei"
+
 
 def preprocess_data():
+    """
+    Preprocessing of the X-Ray images and JSON ground truth for training the U-Net model. The DICOM images are loaded,
+    converted to a numpy array, resized and scaled to values between 0. and 1.
+    The JSON ground truth is loaded, converted to a numpy array representing the different classes by integers
+    and resized.
+    The created numpy arrays are stored on disk at the specified path in the config.
+    """
     input_files = sorted(glob.glob(config.DATA_DIR + "/*"))
     target_files = sorted(glob.glob(config.LABEL_DIR + "/*"))
 

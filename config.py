@@ -1,11 +1,7 @@
-#DATA_DIR = "/Users/christiangrashei/Desktop/Siemens/chestFrontal_standing_100_samples/images"
-#LABEL_DIR = "/Users/christiangrashei/Desktop/Siemens/chestFrontal_standing_100_samples/meta"
-#SAMPLES_DIR = "/Users/christiangrashei/Desktop/Siemens/test_samples"
-#MODEL_PATH = "/Users/christiangrashei/Desktop/Siemens/Models"
 DATA_DIR = "C:/Users/z004kwjs/Desktop/chest_x-ray/chestFrontal_standing"
 LABEL_DIR = "C:/Users/z004kwjs/Desktop/chest_x-ray/chestfrontalstanding-output-json"
 MODEL_DIR = "C:/Users/z004kwjs/Desktop/chest_x-ray/models"
-SAMPLES_DIR = "/Users/christiangrashei/Desktop/Siemens/test_samples"
+SAMPLES_DIR = "C:/Users/z004kwjs/Desktop/chest_x-ray/test_samples"
 PREPROCESSING_PATH = "C:/Users/z004kwjs/Desktop/chest_x-ray/preprocessed_data"
 INPUT_IMAGE_HEIGHT = 256
 INPUT_IMAGE_WIDTH = 256

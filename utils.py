@@ -3,8 +3,14 @@ import config
 from matplotlib import pyplot as plt
 from dataset import combine_masks, binary_from_polygon, load_image
 
+__author__ = "Christian Grashei"
+
 
 def check_for_lung_overlap():
+    """
+    Check if there are images where the segmentation masks for left and right lung overlaps. If yes an assertion error
+    should be raised by combine masks.
+    """
     targets = sorted(glob.glob(config.LABEL_DIR + "/*"))
 
     train_end = int(len(targets) * config.TRAIN_SIZE)
@@ -16,6 +22,9 @@ def check_for_lung_overlap():
 
 
 def show_sample():
+    """
+    Show a sample from the dataset together with the ground truth segmentation mask.
+    """
     # Sample image as numpy array
     dicom_image = load_image(config.DATA_DIR + "/DO-2415411260-0610280953-7226048946-286786.dcm")
 

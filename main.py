@@ -4,9 +4,10 @@ import torch
 import numpy as np
 import segmentation_models_pytorch as smp
 import argparse
+import os
 from matplotlib import pyplot as plt
 from torch import optim
-from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils import data
 from torchmetrics import JaccardIndex, F1Score
 from sklearn.metrics import jaccard_score, f1_score
@@ -15,8 +16,23 @@ from tqdm import tqdm
 import config
 from dataset import SegmentationDataSet, PerfSegmentationDataSet
 
+__author__ = "Christian Grashei"
 
-def get_perf_dataloader(batch_size, training=True):
+
+def get_dataloader(batch_size, training=True):
+    """
+    Creates a dataloader for the training or validation partition of the dataset. The size of the training and
+    Validation partition can be specified in the config file.
+
+    Parameters
+    ----------
+    training: If true the dataloader for the training partition is created, otherwise for the validation partition.
+    batch_size: The batch size the dataloader should have.
+
+    Returns
+    -------
+    dataloader : The dataloader for the requested dataset
+    """
     # Get images from directory
     input_files = sorted(glob.glob(config.PREPROCESSING_PATH + "/images/" + "/*"))
     # Get label files from directory
@@ -31,66 +47,43 @@ def get_perf_dataloader(batch_size, training=True):
         dataset = PerfSegmentationDataSet(input_files[:train_end], target_files[:train_end])
     else:
         val_end = train_end + int(len(input_files) * config.VAL_SIZE)
-        dataset = SegmentationDataSet(input_files[train_end:val_end], target_files[train_end:val_end])
+        dataset = PerfSegmentationDataSet(input_files[train_end:val_end], target_files[train_end:val_end])
 
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
-                                             shuffle=True,
+                                             shuffle=True if training else False,
                                              num_workers=8,
                                              pin_memory=True,
-                                             prefetch_factor=10)
-
-    return dataloader
-
-
-def get_dataloader(batch_size, training=True):
-    """
-    Creates a dataloader for the training or validation partition of the dataset. The size of the training and
-    Validation partition can be specified in the config file
-
-    Parameters
-    ----------
-    training: If true the dataloader for the training partition is created, otherwise for the validation partition
-    batch_size: The batch size the dataloader should have
-
-    Returns
-    -------
-    dataloader : The dataloader for the requested dataset
-    """
-    # Get images from directory
-    input_files = sorted(glob.glob(config.DATA_DIR + "/*"))
-    # Get label files from directory
-    target_files = sorted(glob.glob(config.LABEL_DIR + "/*"))
-
-    # Length of input files and target files must be the same
-    assert len(input_files) == len(target_files)
-
-    train_end = int(len(input_files) * config.TRAIN_SIZE)
-
-    if training:
-        dataset = PerfSegmentationDataSet(input_files[:train_end], target_files[:train_end])
-    else:
-        val_end = train_end + int(len(input_files) * config.VAL_SIZE)
-        dataset = SegmentationDataSet(input_files[train_end:val_end], target_files[train_end:val_end])
-
-    dataloader = torch.utils.data.DataLoader(dataset,
-                                             batch_size=batch_size,
-                                             shuffle=True,
-                                             num_workers=8,
-                                             pin_memory=True,
-                                             prefetch_factor=10)
+                                             prefetch_factor=10,
+                                             persistent_workers=True)
 
     return dataloader
 
 
 def train(batch_size=32, epochs=1, lr=0.001, encoder_name="mobilenet_v2",
           encoder_weights="imagenet", activation="sigmoid"):
-    #training_dataloader = get_dataloader(batch_size, training=True)
-    training_dataloader = get_perf_dataloader(batch_size, training=True)
+    """
+    Training of a U-Net model with the specified parameters.
+
+    Parameters
+    ----------
+    batch_size: The batch size which should be used during training.
+    epochs: The maximum number of epochs the model should be trained.
+    lr: The learning rate
+    encoder_name: The name of the encoder model to be used in the U-Net (e.g. mobilenet_v2, efficientnet-b0).
+    encoder_weights: When set to imagenet the encoder model is initialized with pretrained weights.
+    activation: The activation function to use after the last conv layer.
+
+    Returns
+    -------
+    model : The trained U-Net model
+    """
+    print("Starting Training")
+    training_dataloader = get_dataloader(batch_size, training=True)
 
     model = smp.Unet(
-        encoder_name=encoder_name,  # encoder, e.g. mobilenet_v2 or efficientnet-b7
-        encoder_weights=encoder_weights,  # use `imagenet` pre-trained weights
+        encoder_name=encoder_name,
+        encoder_weights=encoder_weights,
         in_channels=1,
         classes=3,
         activation=activation
@@ -100,7 +93,7 @@ def train(batch_size=32, epochs=1, lr=0.001, encoder_name="mobilenet_v2",
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    lr_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=4, threshold=0.006, verbose=True)
+    lr_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=4, threshold=0.006, min_lr=1e-6, verbose=True)
 
     # Training for EPOCHS
     for epoch in range(epochs):
@@ -110,16 +103,13 @@ def train(batch_size=32, epochs=1, lr=0.001, encoder_name="mobilenet_v2",
                 inputs, labels = data[0].to(device=device, non_blocking=True), data[1].to(device=device,
                                                                                           non_blocking=True)
 
-                # zero the parameter gradients
                 optimizer.zero_grad(set_to_none=True)
 
-                # forward + backward + optimize
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
 
-                # update statistics
                 running_loss += loss.item()
                 pbar.set_postfix(loss=running_loss)
 
@@ -133,12 +123,20 @@ def train(batch_size=32, epochs=1, lr=0.001, encoder_name="mobilenet_v2",
 
 
 def test(model, batch_size=32):
+    """
+    Testing a model with the validation partition of the dataset and printing out the mIoU and F1-Score.
+
+    Parameters
+    ----------
+    model: The model which should be tested.
+    batch_size: The batch size which should be used during training.
+    """
+    print("Testing Model")
     # Worse performance using eval??
     model.eval()
     model.to("cpu")
 
-    #val_dataloader = get_dataloader(batch_size, training=False)
-    val_dataloader = get_perf_dataloader(batch_size, training=False)
+    val_dataloader = get_dataloader(batch_size, training=False)
 
     jaccard = JaccardIndex(num_classes=3, average="macro")
     f1 = F1Score(num_classes=3, average="macro", mdmc_average="global")
@@ -153,40 +151,41 @@ def test(model, batch_size=32):
         tm_running_f1_score = 0
         sklearn_running_f1_score = 0
 
-        for data in val_dataloader:
-            inputs, labels = data
-            outputs = model(inputs)
-            outputs = torch.argmax(outputs, dim=1)
-            total_batches += 1
+        with tqdm(val_dataloader, unit="batch", desc="Testing") as pbar:
+            for data in pbar:
+                inputs, labels = data
+                outputs = model(inputs)
+                outputs = torch.argmax(outputs, dim=1)
+                total_batches += 1
 
-            # Calculate mIoU with Segmentation models library
-            tp, fp, fn, tn = smp.metrics.get_stats(outputs, labels, mode='multiclass', num_classes=3)
-            sm_running_iou_score += smp.metrics.iou_score(tp, fp, fn, tn, reduction="macro")
+                # Calculate mIoU with Segmentation models library
+                tp, fp, fn, tn = smp.metrics.get_stats(outputs, labels, mode='multiclass', num_classes=3)
+                sm_running_iou_score += smp.metrics.iou_score(tp, fp, fn, tn, reduction="macro")
 
-            # Calculate mIoU with torchmetrics library
-            tm_running_iou_score += jaccard(outputs, labels)
+                # Calculate mIoU with torchmetrics library
+                tm_running_iou_score += jaccard(outputs, labels)
 
-            # Calculate mIoU with scikit-learn
-            sklearn_per_class_average_iou = numpy.zeros(3)
-            for label_sample, output_sample in zip(labels, outputs):
-                sklearn_per_class_average_iou += jaccard_score(label_sample.numpy().flatten(),
-                                                               output_sample.numpy().flatten(), average=None)
-            sklearn_per_class_average_iou /= labels.shape[0]
-            sklearn_running_iou_score += np.average(sklearn_per_class_average_iou)
+                # Calculate mIoU with scikit-learn
+                sklearn_per_class_average_iou = numpy.zeros(3)
+                for label_sample, output_sample in zip(labels, outputs):
+                    sklearn_per_class_average_iou += jaccard_score(label_sample.numpy().flatten(),
+                                                                   output_sample.numpy().flatten(), average=None)
+                sklearn_per_class_average_iou /= labels.shape[0]
+                sklearn_running_iou_score += np.average(sklearn_per_class_average_iou)
 
-            # Calculate F-Score with Segmentation Models library
-            sm_running_f1_score += smp.metrics.f1_score(tp, fp, fn, tn, reduction="macro")
+                # Calculate F-Score with Segmentation Models library
+                sm_running_f1_score += smp.metrics.f1_score(tp, fp, fn, tn, reduction="macro")
 
-            # Calculate F-Score with torchmetrics library
-            tm_running_f1_score += f1(outputs, labels)
+                # Calculate F-Score with torchmetrics library
+                tm_running_f1_score += f1(outputs, labels)
 
-            # Calculate F-Score with scikit-learn library
-            sklearn_per_class_average_f1 = numpy.zeros(3)
-            for label_sample, output_sample in zip(labels, outputs):
-                sklearn_per_class_average_f1 += f1_score(label_sample.numpy().flatten(),
-                                                         output_sample.numpy().flatten(), average=None)
-            sklearn_per_class_average_f1 /= labels.shape[0]
-            sklearn_running_f1_score += np.average(sklearn_per_class_average_f1)
+                # Calculate F-Score with scikit-learn library
+                sklearn_per_class_average_f1 = numpy.zeros(3)
+                for label_sample, output_sample in zip(labels, outputs):
+                    sklearn_per_class_average_f1 += f1_score(label_sample.numpy().flatten(),
+                                                             output_sample.numpy().flatten(), average=None)
+                sklearn_per_class_average_f1 /= labels.shape[0]
+                sklearn_running_f1_score += np.average(sklearn_per_class_average_f1)
 
     print(f"Segmentation models mIoU: {sm_running_iou_score / total_batches}")
     print(f"torchmetrics mIoU: {tm_running_iou_score / total_batches}")
@@ -198,6 +197,14 @@ def test(model, batch_size=32):
 
 
 def show_image_with_segmentation_masks(model):
+    """
+    I wrote this function for debugging purposes. It plots the first image of the validation dataset together with the
+    ground truth segmentation mask and the segmentation mask predicted by the model.
+
+    Parameters
+    ----------
+    model: The model which should be used for prediction
+    """
     model.eval()
     model.to("cpu")
 
@@ -211,19 +218,18 @@ def show_image_with_segmentation_masks(model):
     fig = plt.figure()
 
     fig.add_subplot(1, 3, 1)
-    plt.imshow(input_test[1][0], cmap=plt.cm.bone)
+    plt.imshow(input_test[0][0], cmap=plt.cm.bone)
 
     fig.add_subplot(1, 3, 2)
-    plt.imshow(labels[1].long(), interpolation=None)
+    plt.imshow(labels[0], interpolation=None)
 
     fig.add_subplot(1, 3, 3)
-    plt.imshow(output_mask[1], interpolation=None)
+    plt.imshow(output_mask[0], interpolation=None)
 
     plt.show()
 
 
 def test_samples(model_path):
-    # Get images from directory
     samples = sorted(glob.glob(config.SAMPLES_DIR + "/*"))
     targets = sorted(glob.glob(config.LABEL_DIR + "/*"))
 
@@ -232,6 +238,7 @@ def test_samples(model_path):
 
     model = torch.load(model_path)
     model.eval()
+    model.to("cpu")
 
     with torch.no_grad():
         dataiter = iter(samples_dataloader)
@@ -239,7 +246,7 @@ def test_samples(model_path):
             outputs = model(sample)
             output_mask = torch.argmax(outputs, dim=1)
 
-            fig = plt.figure(figsize=(20, 10))
+            fig = plt.figure(figsize=(15, 10))
 
             fig.add_subplot(1, 2, 1)
             plt.imshow(sample[0][0], cmap=plt.cm.bone)
@@ -262,10 +269,10 @@ def main(args):
 
         test(model, batch_size=args.batch_size)
     else:
+        print(f"Loading model: {os.path.basename(args.model_path)}")
         model = torch.load(args.model_path)
         test(model, batch_size=args.batch_size)
-
-    # show_image_with_segmentation_masks(model)
+        show_image_with_segmentation_masks(model)
 
 
 if __name__ == "__main__":

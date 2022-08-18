@@ -9,6 +9,7 @@ from torch.nn import ConvTranspose2d
 from torch.nn import functional as F
 from torchvision.transforms import CenterCrop
 
+
 class Block(Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()

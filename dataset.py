@@ -9,6 +9,8 @@ from skimage import transform
 
 import config
 
+__author__ = "Regine Büter, Christian Grashei"
+
 
 def binary_from_polygon(path_to_json):
     """Create a binary segmentation mask from a json file which contains a polygon trace for each lung.
@@ -132,7 +134,8 @@ def combine_masks(left_lung, right_lung):
 
 class SegmentationDataSet(data.Dataset):
     """
-    This class loads and prepares the images and segmentation mask and represents a dataset of them.
+    This class loads and prepares the images and segmentation mask and represents a dataset of them. Preprocessing is
+    done on loading of each sample
     """
 
     def __init__(self, inputs: list, targets: list):
@@ -168,17 +171,18 @@ class SegmentationDataSet(data.Dataset):
 
 class PerfSegmentationDataSet(data.Dataset):
     """
-    This class loads and prepares the images and segmentation mask and represents a dataset of them.
+    This class loads and prepares the images and segmentation mask and represents a dataset of them. Data needs to be
+    preprocessed in advance (faster).
     """
 
     def __init__(self, inputs: list, targets: list):
         self.inputs = []
         self.targets = []
 
-        for i, img in enumerate(inputs, 1):
+        for img in inputs:
             self.inputs.append(np.load(img))
 
-        for i, mask in enumerate(targets, 1):
+        for mask in targets:
             self.targets.append(np.load(mask))
 
     def __len__(self):
