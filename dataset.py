@@ -95,16 +95,6 @@ def load_image(path):
         dcm_img = np.max(ds.pixel_array) - ds.pixel_array
     else:
         dcm_img = ds.pixel_array
-    # normalize image
-    # max_val = dcm_img.max()
-    # zero_one_perc = max_val - max_val / 1000
-    # dcm_img[dcm_img > zero_one_perc] = zero_one_perc
-    tmp_surrogate_image = dcm_img.flatten()
-    tmp_surrogate_image.sort()
-    min = tmp_surrogate_image[int((len(tmp_surrogate_image) - 1) * 0.01)]
-    # min is subtracted from image, so need to subtract it from array too
-    max = tmp_surrogate_image[int((len(tmp_surrogate_image) - 1) * 0.99)]
-    dcm_img[dcm_img > max] = max
     return dcm_img
 
 
